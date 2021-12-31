@@ -2,24 +2,28 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include "Lpf2Hub.h"
+#include "SerialLogger.h"
 
 #define HUBS 1
 Lpf2Hub* myHubs[HUBS];
 Lpf2Hub* myHub;
+bool hubStatus[4] = {false, false, false, false};
 
 Color hubColors[4] = {GREEN, RED, PURPLE, ORANGE};
 
 TFT_eSPI tft = TFT_eSPI();
 
+SerialLogger logger = SerialLogger(Trace);
+
 // create a hub instance
 byte portD = (byte)ControlPlusHubPort::D;
 
 void keepAllHubsConnected( void * pvParameters ){
-  Serial.print("keepAllHubsConnected started");
+  logger.debug("keepAllHubsConnected started");
 
   for ( ; ; ) {
 
-  Serial.println("Hi from connectiong loop");
+  logger.debug("Hi from connectiong loop");
     for (int hub=0; hub<HUBS; hub++) {
 
     vTaskDelay(1000/portTICK_PERIOD_MS);
@@ -34,9 +38,11 @@ void keepAllHubsConnected( void * pvParameters ){
       if (myHub->isConnecting()) {
         myHub->connectHub();
         if (myHub->isConnected()) {
-          Serial.println("Connected to HUB");
+          logger.debug("Connected to HUB");
+          hubStatus[hub] = true;
         } else {
-          Serial.println("Failed to connect to HUB");
+          logger.debug("Failed to connect to HUB");
+          hubStatus[hub] = false;
         }
         continue;
       }
@@ -49,7 +55,8 @@ void keepAllHubsConnected( void * pvParameters ){
         myHub->setLedColor(hubColors[hub]);
 
       } else {
-        Serial.println("ControlPlus hub is disconnected");
+        logger.debug("ControlPlus hub is disconnected");
+        hubStatus[hub] = false;
       }
     }
     vTaskDelay(1000/portTICK_PERIOD_MS);
@@ -58,7 +65,7 @@ void keepAllHubsConnected( void * pvParameters ){
 
 void processAllHubs( void * pvParameters ){
 
-  Serial.println("processAllHubs started");
+  logger.debug("processAllHubs started");
 
   for (;;) {
     for (int hub=0; hub<HUBS; hub++) {
@@ -76,12 +83,34 @@ void processAllHubs( void * pvParameters ){
         myHub->stopTachoMotor(portD);
         vTaskDelay(1000/portTICK_PERIOD_MS);
       } else {
-        Serial.println("ControlPlus hub is disconnected");
+        logger.debug("ControlPlus hub is disconnected");
       }
     }
     vTaskDelay(100/portTICK_PERIOD_MS);
   }
 }
+
+void showStatusTask ( void * pvParameters ){
+  for (;;) {
+    tft.fillScreen(TFT_BLACK);  
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(0, 30);
+    for (int hub=0; hub<HUBS; hub++) {
+
+        tft.printf("Hub %d:", hub);
+        if (hubStatus[hub]) {
+          tft.println("Connected");
+
+        } else {
+          tft.println("Disconnected");
+        }
+    }
+  vTaskDelay(500/portTICK_PERIOD_MS);
+  }
+
+}
+
+
 
 void setup() {
 
@@ -90,13 +119,9 @@ void setup() {
     myHubs[x]->init();
   }
 
-  Serial.begin(9600);
   tft.begin();
   tft.setRotation(1);
-  tft.fillScreen(TFT_BLACK);  
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.setCursor(0, 30);
-  Serial.println("Hello world");
+
 
   BaseType_t xReturned;
   TaskHandle_t xHandle1 = NULL;
@@ -106,7 +131,7 @@ void setup() {
                     keepAllHubsConnected,           /* Function that implements the task. */
                     "Keep All Hubs Connected",      /* Text name for the task. */
                     8000,                           /* Stack size in words, not bytes. */
-                    ( void * ) 1,                   /* Parameter passed into the task. */
+                    NULL,                   /* Parameter passed into the task. */
                     tskIDLE_PRIORITY,               /* Priority at which the task is created. */
                     &xHandle1,
                     CONFIG_ARDUINO_RUNNING_CORE);        /* Used to pass out the created task's handle. */
@@ -115,17 +140,25 @@ void setup() {
                     processAllHubs,    /* Function that implements the task. */
                     "Send Moves to All Hubs",  /* Text name for the task. */
                     8000,              /* Stack size in words, not bytes. */
-                    ( void * ) 1,      /* Parameter passed into the task. */
+                    NULL,      /* Parameter passed into the task. */
                     tskIDLE_PRIORITY,  /* Priority at which the task is created. */
                     &xHandle2, /* Used to pass out the created task's handle. */
                     CONFIG_ARDUINO_RUNNING_CORE);        
 
+xReturned = xTaskCreate(
+                    showStatusTask, 
+                    "Show status", 
+                    8000, 
+                    NULL, 
+                    tskIDLE_PRIORITY, 
+                    NULL
+                    );   
   //vTaskStartScheduler();
 }
 
 
 // main loop
 void loop() {
-    Serial.println("Hi from main thread");
+    logger.debug("Hi from main thread");
     delay(1000);
  } // End of loop
