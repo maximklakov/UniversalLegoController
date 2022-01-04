@@ -2,7 +2,11 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include "Lpf2Hub.h"
+
+// Internal libs
 #include "SerialLogger.h"
+#include "JoystickReader.h"
+
 
 #define HUBS 1
 Lpf2Hub* myHubs[HUBS];
